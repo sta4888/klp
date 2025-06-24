@@ -1,56 +1,83 @@
-import tkinter as tk                  # Библиотека для создания GUI
-from pynput import keyboard           # Для перехвата нажатий клавиш
-import threading                      # Для запуска перехвата клавиш в отдельном потоке
+import tkinter as tk
+from pynput import keyboard
+import threading
+import time
+import json  # Для сохранения в JSON
+import os
+
 
 class KeyLoggerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Key Logger Display")       # Заголовок окна
-        self.root.geometry("600x400")               # Размер окна
-        self.root.configure(bg="black")             # Цвет фона
+        self.root.title("Key Logger Display")
+        self.root.geometry("600x400")
+        self.root.configure(bg="black")
 
-        # Создаем текстовое поле для отображения нажатых клавиш
         self.text_area = tk.Text(
             root,
-            font=("Courier", 16),                   # Шрифт
-            bg="black",                             # Черный фон
-            fg="lime",                              # Зеленый текст
-            wrap=tk.WORD                            # Перенос по словам
+            font=("Courier", 14),
+            bg="black",
+            fg="lime",
+            wrap=tk.WORD
         )
-        self.text_area.pack(expand=True, fill=tk.BOTH)   # Растягиваем по всему окну
-        self.text_area.insert(tk.END, "Начни нажимать клавиши...\n")  # Начальное сообщение
-        self.text_area.configure(state=tk.DISABLED)   # Делаем поле только для чтения
+        self.text_area.pack(expand=True, fill=tk.BOTH)
+        self.text_area.insert(tk.END, "Нажимайте клавиши...\n")
+        self.text_area.configure(state=tk.DISABLED)
 
-        # Запускаем поток с обработчиком клавиш
+        self.start_time = time.time()
+        self.key_log = []  # Список для хранения данных о нажатиях
+
+        # Обработка закрытия окна
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Запуск слушателя клавиш в фоновом потоке
         self.listener_thread = threading.Thread(
             target=self.start_key_listener,
-            daemon=True                            # Фоновый поток завершится при закрытии окна
+            daemon=True
         )
         self.listener_thread.start()
 
     def start_key_listener(self):
-        # Функция-обработчик нажатий клавиш
         def on_press(key):
+            elapsed = time.time() - self.start_time
+            timestamp = round(elapsed, 3)
+
             try:
-                key_str = key.char                # Если это обычный символ (буква, цифра и т.п.)
+                key_str = key.char
             except AttributeError:
-                key_str = str(key).replace("Key.", "").upper()  # Если это спецклавиша (Enter, Shift...)
+                key_str = str(key).replace("Key.", "").upper()
 
-            # Запланировать обновление GUI из основного потока
-            self.root.after(0, self.update_display, key_str)
+            # Добавляем в лог
+            self.key_log.append({
+                "time": timestamp,
+                "key": key_str
+            })
 
-        # Запускаем слушателя клавиш
+            # Отображаем на экране
+            display_str = f"[{timestamp:.3f}s] {key_str}"
+            self.root.after(0, self.update_display, display_str)
+
         with keyboard.Listener(on_press=on_press) as listener:
-            listener.join()  # Ожидаем завершения слушателя (будет работать вечно)
+            listener.join()
 
-    def update_display(self, key_str):
-        # Разблокируем поле, вставляем символ, блокируем обратно
+    def update_display(self, text):
         self.text_area.configure(state=tk.NORMAL)
-        self.text_area.insert(tk.END, key_str + " ")  # Добавляем символ
-        self.text_area.see(tk.END)                    # Прокручиваем вниз
+        self.text_area.insert(tk.END, text + "\n")
+        self.text_area.see(tk.END)
         self.text_area.configure(state=tk.DISABLED)
 
-# Запуск приложения
+    def on_close(self):
+        # Сохраняем key_log в JSON-файл
+        try:
+            with open("keylog.json", "w", encoding="utf-8") as f:
+                json.dump(self.key_log, f, indent=4, ensure_ascii=False)
+            print("Сохранено в keylog.json")
+        except Exception as e:
+            print(f"Ошибка при сохранении: {e}")
+
+        self.root.destroy()  # Закрываем окно
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = KeyLoggerApp(root)
